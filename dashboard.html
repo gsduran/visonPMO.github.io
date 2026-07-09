@@ -177,8 +177,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   </div>
   <div class="right">
     <span class="stamp" id="stamp"></span>
+    <button class="btn" id="btnSheetsSync" title="Trae los datos más recientes desde Google Sheets">&#8635; Actualizar desde Google Sheets</button>
+    <button class="btn ghost" id="btnSheetsConfig" title="Configurar la conexión a Google Sheets">&#9881;</button>
     <button class="btn" id="btnOpenExcel" style="display:none" title="Abre el Excel vinculado en Excel de escritorio para editarlo">&#128194; Abrir Excel</button>
-    <button class="btn" id="btnRefresh" style="display:none" title="Carga el Excel actualizado y refresca los datos">&#8635; Actualizar datos (cargar Excel)</button>
+    <button class="btn ghost" id="btnRefresh" style="display:none" title="Carga un Excel manualmente desde tu computador">&#128194; Cargar Excel manual</button>
     <button class="btn ghost" id="btnReconnect" style="display:none">Cambiar archivo</button>
     <button class="btn ghost" id="btnSetPath" style="display:none" title="Cambiar la ruta del Excel vinculado">&#9881;</button>
   </div>
@@ -341,6 +343,52 @@ function copiarRuta(){
 function cambiarRuta(){
   const v = prompt('Ruta completa del Excel vinculado:', rutaExcel());
   if(v && v.trim()){ localStorage.setItem('rutaExcel', v.trim()); toast('Ruta del Excel guardada.'); }
+}
+
+/* ===== Conexión a Google Sheets (Apps Script Web App) =====
+   Pega aquí la URL de tu Web App (termina en /exec) para que quede
+   precargada por defecto y no todos tengan que configurarla a mano. */
+const DEFAULT_SHEETS_URL = '';
+function sheetsUrl(){ return localStorage.getItem('sheetsApiUrl') || DEFAULT_SHEETS_URL; }
+function configurarSheets(){
+  const v = prompt('Pega la URL de tu Google Apps Script Web App (termina en /exec):', sheetsUrl());
+  if(v && v.trim()){
+    localStorage.setItem('sheetsApiUrl', v.trim());
+    toast('Conexión guardada. Actualizando datos…');
+    loadFromGoogleSheets(true);
+  }
+}
+function base64ToArrayBuffer(base64){
+  const binary=atob(base64);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+  return bytes.buffer;
+}
+async function loadFromGoogleSheets(showToast){
+  const url=sheetsUrl();
+  if(!url){ configurarSheets(); return; }
+  try{
+    setStatus('Conectando con Google Sheets…');
+    const resp=await fetch(url,{cache:'no-store'});
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const json=await resp.json();
+    if(!json.base64) throw new Error('Respuesta inesperada del conector.');
+    const buf=base64ToArrayBuffer(json.base64);
+    wb=XLSX.read(buf,{cellDates:true});
+    DATA=parseWorkbook(wb);
+    CACHED_PLANES={};
+    DATA.forEach(i=>{ if(i.sheet){ const det=parseDetail(i.sheet); if(det) CACHED_PLANES[i.name]=det; } });
+    LAST_TS=new Date().toISOString();
+    await idb.set('snapshot',{data:DATA, planes:CACHED_PLANES, ts:LAST_TS}).catch(()=>{});
+    $('#connect').style.display='none';
+    $('#app').style.display='';
+    afterLoad(false);
+    setStatus('✓ Datos actualizados desde Google Sheets — <b>'+DATA.length+'</b> iniciativas · '+fmtStamp(LAST_TS),'ok');
+    if(showToast)toast('Datos actualizados desde Google Sheets');
+  }catch(e){
+    setStatus('⚠ No se pudo conectar a Google Sheets: '+esc(e.message)+'. Mostrando la última versión guardada (si existe).','err');
+    if(showToast)toast('No se pudo conectar a Google Sheets: '+e.message);
+  }
 }
 
 /* ============ persistencia del handle (IndexedDB) ============ */
@@ -763,6 +811,8 @@ $('#btnReconnect').onclick=pickFile;
 $('#btnRefresh').onclick=pickFile;
 $('#btnOpenExcel').onclick=abrirExcel;
 $('#btnSetPath').onclick=cambiarRuta;
+$('#btnSheetsSync').onclick=()=>loadFromGoogleSheets(true);
+$('#btnSheetsConfig').onclick=configurarSheets;
 window.addEventListener('focus',async()=>{
   if(fileHandle){const q=await fileHandle.queryPermission({mode:'read'}).catch(()=>'denied');
     if(q==='granted')loadData(false);}   // solo refresca si ya hay permiso (no muestra ningún diálogo)
@@ -788,6 +838,9 @@ async function init(){
     if(h) fileHandle=h;
   }
   // Si no hay datos (caso extremo), queda visible la pantalla para conectar el Excel.
+  // Sincroniza en segundo plano con Google Sheets (si ya está configurado),
+  // sin bloquear la vista de lo que ya estaba guardado.
+  if(sheetsUrl()) loadFromGoogleSheets(false);
 }
 init();
 </script>
