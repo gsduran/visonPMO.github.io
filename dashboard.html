@@ -290,7 +290,7 @@ const $=s=>document.querySelector(s);
 /* ===== Conexión a Google Sheets (Apps Script Web App) =====
    Pega aquí la URL de tu Web App (termina en /exec) para que quede
    precargada por defecto y no todos tengan que configurarla a mano. */
-const DEFAULT_SHEETS_URL = '';
+const DEFAULT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxpKQHlNEFFUuFGtqQWBgMqKctVOfj2_kfzezxNrqrTYQtIkFP8npS3kfMfxmJonR4/exec';
 function sheetsUrl(){ return localStorage.getItem('sheetsApiUrl') || DEFAULT_SHEETS_URL; }
 function configurarSheets(){
   const v = prompt('Pega la URL de tu Google Apps Script Web App (termina en /exec):', sheetsUrl());
